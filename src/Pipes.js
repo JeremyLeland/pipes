@@ -27,7 +27,6 @@ const FlowDelay = 10000;
 export class Board {
   #grid;
   #flowPath;
-  #nextPipesOffset = 0;
 
   constructor( json ) {
     Object.assign( this, json );
@@ -35,27 +34,31 @@ export class Board {
     this.cols ??= 10;
     this.rows ??= 7;
 
+    if ( this.map == undefined ) {
+      this.reset();
+    }
+  }
+
+  reset() {
     this.#grid = new Grid( 0, 0, this.cols - 1, this.rows - 1 );
 
-    this.map ??= Array( this.cols * this.rows ).fill( 0 );
+    this.map = Array.from( Array( this.cols * this.rows ), _ => randomFrom( PlaceablePipes ) );
 
-    if ( this.start == undefined ) {
-      this.start = [
-        Math.floor( this.cols * ( 0.25 + 0.5 * Math.random() ) ),
-        Math.floor( this.rows * ( 0.25 + 0.5 * Math.random() ) ),
-      ];
+    this.start = [
+      Math.floor( this.cols * ( 0.25 + 0.5 * Math.random() ) ),
+      Math.floor( this.rows * ( 0.25 + 0.5 * Math.random() ) ),
+    ];
 
-      this.map[ this.start[ 0 ] + this.start[ 1 ] * this.cols ] = randomFrom( StartPipes );
-    }
+    this.map[ this.start[ 0 ] + this.start[ 1 ] * this.cols ] = randomFrom( StartPipes );
+    
+    this.timeUntilFlow = FlowDelay;
 
-    this.nextPipes ??= Array.from( Array( 5 ), _ => randomFrom( PlaceablePipes ) );
+    this.flowSpeedMultiplier = 1;
+    this.flowLength = 0;
 
-    this.timeUntilFlow ??= FlowDelay;
+    this.#flowPath = null;
 
-    this.flowSpeedMultiplier ??= 1;
-    this.flowLength ??= 0;
-
-    this.defeat ??= false;
+    this.defeat = false;
   }
 
   update( dt ) {
@@ -108,8 +111,6 @@ export class Board {
         addPath( this.#flowPath, start, end, currX, currY, Math.min( 1, this.flowLength - i ) );
       }
     }
-
-    this.#nextPipesOffset = Math.min( 0, this.#nextPipesOffset + 0.002 * dt );
   }
 
   draw( ctx, mouseCol, mouseRow ) {
@@ -126,10 +127,6 @@ export class Board {
         drawPipe( ctx, this.map[ col + row * this.cols ], col, row );
       }
     }
-
-    this.nextPipes.forEach( ( pipe, index ) => {
-      drawPipe( ctx, pipe, -1, index + this.#nextPipesOffset );
-    } );
 
     // Flow
     if ( this.#flowPath ) {
@@ -156,10 +153,6 @@ export class Board {
       // Pipe preview
       ctx.lineWidth = 0.5;
       ctx.strokeStyle = 'black';
-
-      ctx.globalAlpha = 0.5;
-      drawPipe( ctx, this.nextPipes[ this.nextPipes.length - 1 ], mouseCol, mouseRow );
-      ctx.globalAlpha = 1;
       
       // Grid outline
       ctx.lineWidth = 0.05;
@@ -168,20 +161,21 @@ export class Board {
     }
   }
 
-  playerInput( col, row ) {
+  playerInput( col, row, buttons ) {
     if ( this.defeat ) {
-      return;
+      this.reset();
     }
+    else if ( this.mouseInBounds( col, row ) ) {
+      const rotateFunc = [
+        pipe => pipe,                           // no click (shouldn't ever be called)
+        pipe => ( pipe << 3 ) | ( pipe >> 1 ),  // left click => rotate right
+        pipe => ( pipe << 1 ) | ( pipe >> 3 ),  // right click => rotate left
+        pipe => pipe,                           // L + R (or something else?)
+      ];
 
-    if ( !this.mouseInBounds( col, row ) ) {
-      return;
+      const index = col + row * this.cols;
+      this.map[ index ] = rotateFunc[ buttons ]( this.map[ index ] );
     }
-
-    // next pipes are drawn from top to bottom, and we are pulling from bottom
-    this.map[ col + row * this.cols ] = this.nextPipes.pop();
-    this.nextPipes.unshift( randomFrom( PlaceablePipes ) );
-    
-    this.#nextPipesOffset = -1;
   }
 
   mouseInBounds( col, row ) {
