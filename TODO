@@ -1,0 +1,11 @@
+- Make canvas better fill available area with the desired bounds
+  - Current zoom/scroll is awkward
+  - Can we define desired bounds?
+      - Or maybe center x/y and width/height?
+  - Then we should scale as appropriate to fit all of bounds into available area, with whatever zoom needed
+- Make playable basic Pipe Dream, branch it, put it on website
+  - Then work on better version
+  - More like the hacking in Bioshock
+  - Make a maze of pipes, then rotate them all randomly
+  - Instead of placing pipes from list, rotate them by clicking
+  - I think this is more fun than basic Pipe Dream gameplay
