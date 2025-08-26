@@ -17,6 +17,13 @@ const StartPipes = [
   0b1000,
 ];
 
+const Direction = {
+  Up: 0b0001,
+  Left: 0b0010,
+  Down: 0b0100,
+  Right: 0b1000,
+};
+
 function randomFrom( array ) {
   return array[ Math.floor( Math.random() * array.length ) ];
 }
@@ -49,7 +56,7 @@ export class Board {
       Math.floor( this.rows * ( 0.25 + 0.5 * Math.random() ) ),
     ];
 
-    this.map[ this.start[ 0 ] + this.start[ 1 ] * this.cols ] = randomFrom( StartPipes );
+    this.map[ this.indexAt( ...this.start ) ] = randomFrom( StartPipes );
     
     this.timeUntilFlow = FlowDelay;
 
@@ -59,6 +66,86 @@ export class Board {
     this.#flowPath = null;
 
     this.defeat = false;
+  }
+
+  generateMaze() {
+    this.map = Array.from( Array( this.cols * this.rows ), _ => 0 );
+
+    this.start = [
+      Math.floor( this.cols * ( 0.25 + 0.5 * Math.random() ) ),
+      Math.floor( this.rows * ( 0.25 + 0.5 * Math.random() ) ),
+    ];
+
+
+    const visited = Array.from( this.map, _ => false );
+    const stack = [];
+
+    let current = this.start;
+
+    for ( let i = 0; i < 100; i ++ ) {
+      const currentIndex = this.indexAt( ...current );
+      visited[ currentIndex ] = true;
+
+      const neighbors = [
+        [ current[ 0 ]    , current[ 1 ] - 1 ], // up
+        [ current[ 0 ] - 1, current[ 1 ]     ], // left
+        [ current[ 0 ]    , current[ 1 ] + 1 ], // bottom
+        [ current[ 0 ] + 1, current[ 1 ]     ], // right
+      ].filter( e => this.inBounds( ...e ) && !visited[ this.indexAt( ...e ) ] );
+
+      if ( neighbors.length > 0 ) {
+        const next = randomFrom( neighbors );
+        const nextIndex = this.indexAt( ...next );
+        stack.push( current );
+
+        // Up
+        if ( next[ 1 ] < current[ 1 ] ) {
+          this.map[ currentIndex ] |= Direction.Up;
+          this.map[ nextIndex ] |= Direction.Down;
+        }
+
+        // Left
+        if ( next[ 0 ] < current[ 0 ] ) {
+          this.map[ currentIndex ] |= Direction.Left;
+          this.map[ nextIndex ] |= Direction.Right;
+        }
+
+        // Down
+        if ( current[ 1 ] < next[ 1 ] ) {
+          this.map[ currentIndex ] |= Direction.Down;
+          this.map[ nextIndex ] |= Direction.Up;
+        }
+
+        // Right
+        if ( current[ 0 ] < next[ 0 ] ) {
+          this.map[ currentIndex ] |= Direction.Right;
+          this.map[ nextIndex ] |= Direction.Left;
+        }
+
+        current = next;
+      }
+      else {
+        current = stack.pop();
+
+        if ( current == undefined ) {
+          break;
+        }
+      }
+    }
+
+    // Clean up results
+    for ( let i = 0; i < this.map.length; i ++ ) {
+      // Fill in blank spaces
+      this.map[ i ] ||= randomFrom( PlaceablePipes );
+      
+      // Since we don't have 3-way pieces, just make them 4-ways
+      if ( this.map[ i ] == 0b0111 || 
+           this.map[ i ] == 0b1011 || 
+           this.map[ i ] == 0b1101 || 
+           this.map[ i ] == 0b1110 ) {
+        this.map[ i ] = 0b1111;
+      }
+    }
   }
 
   update( dt ) {
@@ -78,7 +165,7 @@ export class Board {
 
       let [ currX, currY ] = this.start;
       let start = -1;
-      let currPipe = this.map[ currX + currY * this.cols ];
+      let currPipe = this.map[ this.indexAt( currX, currY ) ];
       let end = Math.log2( currPipe & -currPipe );
       
       addPath( this.#flowPath, start, end, currX, currY, Math.min( 1, this.flowLength ), true );
@@ -93,7 +180,7 @@ export class Board {
           break;
         }
 
-        currPipe = this.map[ currX + currY * this.cols ];
+        currPipe = this.map[ this.indexAt( currX, currY ) ];
         
         start = ( end + 2 ) % 4;
 
@@ -124,7 +211,7 @@ export class Board {
 
     for ( let row = 0; row < this.rows; row ++ ) {
       for ( let col = 0; col < this.cols; col ++ ) {
-        drawPipe( ctx, this.map[ col + row * this.cols ], col, row );
+        drawPipe( ctx, this.map[ this.indexAt( col, row ) ], col, row );
       }
     }
 
@@ -149,7 +236,7 @@ export class Board {
       ctx.font = '0.5px Arial';
       ctx.fillText( 'Click to Continue', 4.5, 4 );
     }
-    else if ( this.mouseInBounds( mouseCol, mouseRow ) ) {
+    else if ( this.inBounds( mouseCol, mouseRow ) ) {
       // Pipe preview
       ctx.lineWidth = 0.5;
       ctx.strokeStyle = 'black';
@@ -165,7 +252,7 @@ export class Board {
     if ( this.defeat ) {
       this.reset();
     }
-    else if ( this.mouseInBounds( col, row ) ) {
+    else if ( this.inBounds( col, row ) ) {
       const rotateFunc = [
         pipe => pipe,                           // no click (shouldn't ever be called)
         pipe => ( pipe << 3 ) | ( pipe >> 1 ),  // left click => rotate right
@@ -173,12 +260,16 @@ export class Board {
         pipe => pipe,                           // L + R (or something else?)
       ];
 
-      const index = col + row * this.cols;
+      const index = this.indexAt( col, row );
       this.map[ index ] = rotateFunc[ buttons ]( this.map[ index ] );
     }
   }
 
-  mouseInBounds( col, row ) {
+  indexAt( col, row ) {
+    return col + row * this.cols;
+  }
+
+  inBounds( col, row ) {
     return 0 <= col && col < this.cols && 0 <= row && row < this.rows;
   }
 }
@@ -227,6 +318,13 @@ function addPath( path, start, end, x, y, t, newPath = false ) {
 function drawPipe( ctx, pipe, x, y ) {
   if ( pipe == 0 ) {
     return;
+  }
+
+  // Debug warning for 3-way pieces
+  if ( pipe == 0b0111 || pipe == 0b1011 || pipe == 0b1101 || pipe == 0b1110 ) {
+    ctx.fillStyle = 'red';
+    ctx.fillRect( x - 0.5, y - 0.5, 1, 1 );
+    // return;
   }
 
   ctx.beginPath();
