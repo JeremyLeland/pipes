@@ -77,6 +77,12 @@ export class Board {
     ];
 
 
+    // This was inspired by maze generation, e.g. https://en.wikipedia.org/wiki/Prim's_algorithm
+    // However, we are just trying to guarentee one path from start to end
+    // We don't care about false paths, since we're going to scramble everything anyway
+    // And we have a limitation on pieces with only two connections
+    // TODO: Make paths that cross over each other so we can use the 4-way pieces?
+
     const visited = Array.from( this.map, _ => false );
     const stack = [];
 
@@ -86,14 +92,17 @@ export class Board {
       const currentIndex = this.indexAt( ...current );
       visited[ currentIndex ] = true;
 
+      const currentPipe = this.map[ currentIndex ];
+
+      // TODO: Can we skip this work if currentPipe isn't a 1-way?
       const neighbors = [
         [ current[ 0 ]    , current[ 1 ] - 1 ], // up
         [ current[ 0 ] - 1, current[ 1 ]     ], // left
         [ current[ 0 ]    , current[ 1 ] + 1 ], // bottom
         [ current[ 0 ] + 1, current[ 1 ]     ], // right
       ].filter( e => this.inBounds( ...e ) && !visited[ this.indexAt( ...e ) ] );
-
-      if ( neighbors.length > 0 ) {
+      
+      if ( ( currentPipe == 0 || StartPipes.includes( currentPipe ) ) && neighbors.length > 0 ) {
         const next = randomFrom( neighbors );
         const nextIndex = this.indexAt( ...next );
         stack.push( current );
@@ -125,25 +134,35 @@ export class Board {
         current = next;
       }
       else {
-        current = stack.pop();
+        this.end = current;
+        
+        console.log( stack.length );
 
-        if ( current == undefined ) {
+        // current = stack.pop();
+
+        // if ( current == undefined ) {
           break;
-        }
+        // }
       }
     }
 
     // Clean up results
-    for ( let i = 0; i < this.map.length; i ++ ) {
-      // Fill in blank spaces
-      this.map[ i ] ||= randomFrom( PlaceablePipes );
-      
-      // Since we don't have 3-way pieces, just make them 4-ways
-      if ( this.map[ i ] == 0b0111 || 
-           this.map[ i ] == 0b1011 || 
-           this.map[ i ] == 0b1101 || 
-           this.map[ i ] == 0b1110 ) {
-        this.map[ i ] = 0b1111;
+    for ( let row = 0; row < this.rows; row ++ ) {
+      for ( let col = 0; col < this.cols; col ++ ) {
+        const index = this.indexAt( col, row );
+
+        // Fill in blank spaces
+        this.map[ index ] ||= randomFrom( PlaceablePipes );
+
+        if ( col == this.start[ 0 ] && row == this.start[ 1 ] ) {
+          // skip start
+        }
+        else if ( col == this.end[ 0 ] && row == this.end[ 1 ] ) {
+          // skip end
+        }
+        else {
+          this.map[ index ] = rotatePipe( this.map[ index ], Math.floor( Math.random() * 4 ) );
+        }
       }
     }
   }
@@ -211,6 +230,17 @@ export class Board {
 
     for ( let row = 0; row < this.rows; row ++ ) {
       for ( let col = 0; col < this.cols; col ++ ) {
+
+        if ( col == this.start[ 0 ] && row == this.start[ 1 ] ) {
+          ctx.fillStyle = 'orange';
+          ctx.fillRect( col - 0.5, row - 0.5, 1, 1 );
+        }
+
+        if ( col == this.end[ 0 ] && row == this.end[ 1 ] ) {
+          ctx.fillStyle = 'yellow';
+          ctx.fillRect( col - 0.5, row - 0.5, 1, 1 );
+        }
+
         drawPipe( ctx, this.map[ this.indexAt( col, row ) ], col, row );
       }
     }
@@ -252,12 +282,18 @@ export class Board {
     if ( this.defeat ) {
       this.reset();
     }
+    else if ( col == this.start[ 0 ] && row == this.start[ 1 ] ) {
+      // don't rotate start
+    }
+    else if ( col == this.end[ 0 ] && row == this.end[ 1 ] ) {
+      // don't rotate end
+    }
     else if ( this.inBounds( col, row ) ) {
       const rotateFunc = [
-        pipe => pipe,                           // no click (shouldn't ever be called)
-        pipe => ( pipe << 3 ) | ( pipe >> 1 ),  // left click => rotate right
-        pipe => ( pipe << 1 ) | ( pipe >> 3 ),  // right click => rotate left
-        pipe => pipe,                           // L + R (or something else?)
+        pipe => pipe,                   // no click (shouldn't ever be called)
+        pipe => rotatePipe( pipe, 3 ),  // left click => rotate right
+        pipe => rotatePipe( pipe, 1 ),  // right click => rotate left
+        pipe => pipe,                   // L + R (or something else?)
       ];
 
       const index = this.indexAt( col, row );
@@ -266,6 +302,8 @@ export class Board {
   }
 
   indexAt( col, row ) {
+    // console.log( `indexAt( ${ col }, ${ row } ) = ${ col + row * this.cols }` );
+
     return col + row * this.cols;
   }
 
@@ -274,6 +312,9 @@ export class Board {
   }
 }
 
+function rotatePipe( pipe, turns ) {
+  return ( pipe << turns ) | ( pipe >> ( 4 - turns ) );
+}
 
 function addCurve( path, x1, y1, cx, cy, x2, y2, t = 1 ) {
   if ( t < 1 ) {
@@ -303,6 +344,12 @@ const offset = [
 
 
 function addPath( path, start, end, x, y, t, newPath = false ) {
+
+  // TODO: If start is -1, do a circle in the center to make start clearer
+  //       Or round it off some other way
+
+  // TODO: Handle end pieces
+
   const startX = x + ( start < 0 ? 0 : 0.5 * offset[ start ][ 0 ] );
   const startY = y + ( start < 0 ? 0 : 0.5 * offset[ start ][ 1 ] );
   const endX = x + 0.5 * offset[ end ][ 0 ];
@@ -320,12 +367,18 @@ function drawPipe( ctx, pipe, x, y ) {
     return;
   }
 
-  // Debug warning for 3-way pieces
-  if ( pipe == 0b0111 || pipe == 0b1011 || pipe == 0b1101 || pipe == 0b1110 ) {
-    ctx.fillStyle = 'red';
-    ctx.fillRect( x - 0.5, y - 0.5, 1, 1 );
-    // return;
-  }
+  // // Debug warning for 3-way pieces
+  // if ( isThreeWay( pipe ) ) {
+  //   ctx.fillStyle = 'red';
+  //   ctx.fillRect( x - 0.5, y - 0.5, 1, 1 );
+  //   // return;
+  // }
+
+  // // Debug show 1-way pieces
+  // if ( isOneWay( pipe ) ) {
+  //   ctx.fillStyle = '#0f08';
+  //   ctx.fillRect( x - 0.5, y - 0.5, 1, 1 );
+  // }
 
   ctx.beginPath();
   
