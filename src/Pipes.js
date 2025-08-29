@@ -172,6 +172,10 @@ export class Board {
       return;
     }
 
+    //
+    // TODO: Need to handle victory (getting into end piece) as well
+    //
+
     this.timeUntilFlow = Math.max( 0, this.timeUntilFlow - dt );
 
     if ( this.timeUntilFlow == 0 ) {
@@ -348,12 +352,11 @@ function addPath( path, start, end, x, y, t, newPath = false ) {
   // TODO: If start is -1, do a circle in the center to make start clearer
   //       Or round it off some other way
 
-  // TODO: Handle end pieces
-
-  const startX = x + ( start < 0 ? 0 : 0.5 * offset[ start ][ 0 ] );
-  const startY = y + ( start < 0 ? 0 : 0.5 * offset[ start ][ 1 ] );
-  const endX = x + 0.5 * offset[ end ][ 0 ];
-  const endY = y + 0.5 * offset[ end ][ 1 ];
+  const startX = x + ( offset[ start ] ? 0.5 * offset[ start ][ 0 ] : 0 );
+  const startY = y + ( offset[ start ] ? 0.5 * offset[ start ][ 1 ] : 0 );
+  
+  const endX = x + ( offset[ end ] ? 0.5 * offset[ end ][ 0 ] : 0 );
+  const endY = y + ( offset[ end ] ? 0.5 * offset[ end ][ 1 ] : 0 );
 
   if ( newPath ) {
     path.moveTo( startX, startY );
